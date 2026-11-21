@@ -5,8 +5,8 @@ name: APT/DNF Repo Heartbeat
 # ordered hops + a size match against the Releases asset, and opens a tracking
 # issue (format-specific label) on failure, auto-closing it on recovery.
 #
-# The gate step skips gracefully when the production Worker isn't live yet
-# (before the publish layer is enabled), so this is a no-op until releases ship.
+# The gate step skips gracefully until a release is published and the production
+# Worker is live, so this is a no-op until releases ship.
 
 on:
   schedule:
@@ -29,10 +29,15 @@ jobs:
       GH_TOKEN: ${{ github.token }}
 
     steps:
-      - name: Skip if Worker not live yet
+      - name: Skip until a release exists and the Worker is live
         id: gate
         run: |
-          if curl -fsI --max-time 10 \
+          tag=$(gh release list --limit 1 --json tagName \
+                  --jq '.[0].tagName // empty' -R "$GITHUB_REPOSITORY")
+          if [[ -z "$tag" ]]; then
+            echo "live=false" >> "$GITHUB_OUTPUT"
+            echo "No release published yet; heartbeat skipping (expected pre-publish)."
+          elif curl -fsI --max-time 10 \
               "https://${WORKER_DOMAIN}/dists/stable/InRelease" >/dev/null; then
             echo "live=true" >> "$GITHUB_OUTPUT"
             echo "Worker live; running heartbeat."
